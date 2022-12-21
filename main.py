@@ -8,7 +8,7 @@ import datetime
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from db_orm import Users, Reminders, engine
+from db_orm import Users, Reminders, engine, Base
 from kbs import get_kb, get_inline_kb
 from config import TOKEN_API
 from states import BotStatesForUser
@@ -25,7 +25,7 @@ tasks_of_scheduler = set()
 
 async def on_startup(_):
     print("Start bot")
-    # !!! Full Erase and Recreate DB !!!
+    ## !!! Full Erase and Recreate DB !!! ##
     # async with engine.begin() as conn:
     #     await conn.run_sync(Base.metadata.drop_all)
     #     await conn.run_sync(Base.metadata.create_all)
@@ -518,7 +518,7 @@ async def action_callback_got_it(callback: types.CallbackQuery, state: FSMContex
 async def scheduler(chat, state):
     pass
     while True:
-        await asyncio.sleep(10)
+        await asyncio.sleep(60)
         print(f"Check schedule for user with id {chat.id}")
         user_data = await state.get_data()
         async with async_session() as session:

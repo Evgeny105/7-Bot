@@ -171,7 +171,7 @@ async def comm_help(message: types.Message):
 async def echo(message: types.Message, state: FSMContext):
     print("Got some text and saved to State")
     await state.update_data(last_message=message)
-    await message.answer(text="Got it!")
+    await message.answer(text="Got it! I saved: '" + message.text + "'")
 
 
 @dp.callback_query_handler(text="Add_reminder", state=BotStatesForUser.add_remove)
@@ -494,11 +494,11 @@ async def action_callback_ch_TZ(callback: types.CallbackQuery, state: FSMContext
     elif callback.data == "TZ_to_East":
         curr_TZ = TZ(user_data["current_TZ"], plus_hour=False)
     await state.update_data(current_TZ=curr_TZ[0])
-    await callback.message.answer(
+    await callback.message.edit_text(
         text=f"Current value UTC{curr_TZ[0]}",
         reply_markup=get_inline_kb("set_TZ"),
     )
-    await callback.message.delete()
+    # await callback.message.delete()
     await BotStatesForUser.unknown_TZ.set()
 
 

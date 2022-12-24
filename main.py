@@ -171,7 +171,11 @@ async def comm_help(message: types.Message):
 async def echo(message: types.Message, state: FSMContext):
     print("Got some text and saved to State")
     await state.update_data(last_message=message)
-    await message.answer(text="Got it! I saved: '" + message.text + "'")
+    await message.answer(
+        text="Got it! I saved: '"
+        + message.text
+        + "'\n (Remember to press the button above to continue ⬆️)"
+    )
 
 
 @dp.callback_query_handler(text="Add_reminder", state=BotStatesForUser.add_remove)

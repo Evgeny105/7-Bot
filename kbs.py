@@ -73,4 +73,8 @@ def get_inline_kb(type_of_inl_kb: str) -> InlineKeyboardMarkup:
         kb = InlineKeyboardMarkup(row_width=2)
         kb.add(inline_butt_got_it)
 
+    if type_of_inl_kb == "back":
+        kb = InlineKeyboardMarkup(row_width=2)
+        kb.add(inline_butt_back)
+
     return kb

@@ -175,8 +175,8 @@ async def action_callback_add(callback: types.CallbackQuery):
     print("Pressed Add reminder")
     await callback.message.edit_text(
         text="Let's choose type of reminder:\n"
-        + "<b>Very important reminder</b> - bot will send a reminder message every minute until you confirm receipt\n"
-        + "<b>Simple reminder</b> - bot will send a reminder message once",
+        + "<b><u>Very important reminder</u></b> - bot will send a reminder message every minute until you confirm receipt\n"
+        + "<b><u>Simple reminder</u></b> - bot will send a reminder message once",
         parse_mode="HTML",
         reply_markup=get_inline_kb("type_reminder"),
     )
@@ -367,6 +367,7 @@ async def remove_reminder_num(message: types.Message, state: FSMContext):
 @dp.callback_query_handler(text="Change_TZ", state=BotStatesForUser.add_remove)
 async def action_callback_change_TZ(callback: types.CallbackQuery, state: FSMContext):
     print("Pressed Change time zone")
+    await callback.answer()
     user_data = await state.get_data()
     current_user = user_data["current_user"]
     async with async_session() as session:
@@ -378,24 +379,6 @@ async def action_callback_change_TZ(callback: types.CallbackQuery, state: FSMCon
         reply_markup=get_inline_kb("set_TZ"),
     )
     await state.update_data(current_TZ=res.user_tz)
-    await BotStatesForUser.unknown_TZ.set()
-
-
-@dp.callback_query_handler(state=BotStatesForUser.unknown_TZ)
-async def action_callback_ch_TZ(callback: types.CallbackQuery, state: FSMContext):
-    print("Change TZ")
-    user_data = await state.get_data()
-    if callback.data == "TZ_to_West":
-        curr_TZ = TZ(user_data["current_TZ"], plus_hour=True)
-        await state.update_data(current_TZ=curr_TZ[0])
-    elif callback.data == "TZ_to_East":
-        curr_TZ = TZ(user_data["current_TZ"], plus_hour=False)
-    await state.update_data(current_TZ=curr_TZ[0])
-    await callback.message.edit_text(
-        text=f"Current value UTC{curr_TZ[0]}",
-        reply_markup=get_inline_kb("set_TZ"),
-    )
-    # await callback.message.delete()
     await BotStatesForUser.unknown_TZ.set()
 
 
@@ -452,6 +435,23 @@ async def action_callback_set_TZ(callback: types.CallbackQuery, state: FSMContex
             scheduler(callback.message.chat, state), name=str(current_user.id)
         )  # start of scheduler
         tasks_of_scheduler.add(task_of_scheduler)
+
+
+@dp.callback_query_handler(state=BotStatesForUser.unknown_TZ)
+async def action_callback_ch_TZ(callback: types.CallbackQuery, state: FSMContext):
+    print("Change TZ")
+    user_data = await state.get_data()
+    if callback.data == "TZ_to_West":
+        curr_TZ = TZ(user_data["current_TZ"], plus_hour=True)
+        await state.update_data(current_TZ=curr_TZ[0])
+    elif callback.data == "TZ_to_East":
+        curr_TZ = TZ(user_data["current_TZ"], plus_hour=False)
+    await state.update_data(current_TZ=curr_TZ[0])
+    await callback.message.edit_text(
+        text=f"Current value UTC{curr_TZ[0]}",
+        reply_markup=get_inline_kb("set_TZ"),
+    )
+    await BotStatesForUser.unknown_TZ.set()
 
 
 @dp.callback_query_handler(text="Back", state="*")

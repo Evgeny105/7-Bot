@@ -40,7 +40,11 @@ async def on_shutdown(_):
 
 async def list_of_reminders(user_id):
     async with async_session() as session:
-        stmt = select(Reminders).where(Reminders.user_id == user_id)
+        stmt = (
+            select(Reminders)
+            .where(Reminders.user_id == user_id)
+            .order_by(Reminders.reminder_time)
+        )
         result = await session.execute(stmt)
     return [el for el in result.scalars()]
 
@@ -64,8 +68,8 @@ async def comm_start(message: types.Message, state: FSMContext):
             lr = await list_of_reminders(current_user.id)
             if len(lr) == 0:
                 await message.answer(
-                    text=f"""<em><b>Welcome, {current_user.full_name}!</b> 
-You don't have any reminders yet. But I'm here and ready to help! 😉</em>""",
+                    text=f"<em><b>Welcome, {current_user.full_name}!</b> \n"
+                    + "You don't have any reminders yet. But I'm here and ready to help! 😉</em>",
                     parse_mode="HTML",
                     reply_markup=get_inline_kb("add_remove"),
                 )
@@ -83,10 +87,9 @@ You don't have any reminders yet. But I'm here and ready to help! 😉</em>""",
                 )
                 quantity = str(len(lr)) + " reminder" if len(lr) == 1 else " reminders"
                 await message.answer(
-                    text=f"""<em><b>Welcome, {current_user.full_name}!</b></em>
-You have {quantity}:
-{str_lr}
-<em>And now, I'm here and ready to help! 😉</em>""",
+                    text=f"<em><b>Welcome, {current_user.full_name}!</b></em> \n"
+                    + f"You have {quantity}:\n{str_lr}\n"
+                    + "<em>And now, I'm here and ready to help! 😉</em>",
                     parse_mode="HTML",
                     reply_markup=get_inline_kb("add_remove"),
                 )
@@ -149,7 +152,6 @@ async def comm_stop(message: types.Message, state: FSMContext):
         reply_markup=ReplyKeyboardRemove(),
     )
     await message.delete()
-
     copy_of_set = tasks_of_scheduler.copy()
     for task in copy_of_set:
         if task.get_name() == str(current_user.id):
@@ -167,6 +169,36 @@ async def comm_help(message: types.Message):
     await message.delete()
 
 
+@dp.callback_query_handler(text="Add_reminder", state=BotStatesForUser.add_remove)
+# lambda callback_query: callback_query.data.startswith('Add')
+async def action_callback_add(callback: types.CallbackQuery):
+    print("Pressed Add reminder")
+    await callback.message.edit_text(
+        text="Let's choose type of reminder:\n"
+        + "<b>Very important reminder</b> - bot will send a reminder message every minute until you confirm receipt\n"
+        + "<b>Simple reminder</b> - bot will send a reminder message once",
+        parse_mode="HTML",
+        reply_markup=get_inline_kb("type_reminder"),
+    )
+    await BotStatesForUser.type_reminder.set()
+
+
+@dp.callback_query_handler(text="VI_reminder", state=BotStatesForUser.type_reminder)
+async def action_callback_add_VI_rem(callback: types.CallbackQuery):
+    print("Pressed add VI reminder")
+    await callback.message.edit_text(
+        text="Good! Now send me text of very important reminder",
+    )
+    await BotStatesForUser.VI_reminder.set()
+
+
+@dp.callback_query_handler(text="Simple_reminder", state=BotStatesForUser.type_reminder)
+async def action_callback_add_simple_rem(callback: types.CallbackQuery):
+    print("Pressed add simple reminder")
+    await callback.message.edit_text(text="Good! Now send me text of simple reminder")
+    await BotStatesForUser.simple_reminder.set()
+
+
 @dp.message_handler(state=BotStatesForUser.simple_reminder)
 async def simple_reminder(message: types.Message, state: FSMContext):
     print("Got text of simple reminder and saved to State")
@@ -175,8 +207,6 @@ async def simple_reminder(message: types.Message, state: FSMContext):
         text=f"Got it! I saved text of reminder: \n'{message.text}'\n"
         + "Now send me date and time of simple reminder in format: \n"
         + "YYYY-MM-DD hh:mm \n"
-        # + "and press 'Create reminder'",
-        # reply_markup=get_inline_kb("reminder_create"),
     )
     await BotStatesForUser.simple_reminder_date.set()
 
@@ -189,8 +219,6 @@ async def VI_reminder(message: types.Message, state: FSMContext):
         text=f"Got it! I saved text of reminder: \n'{message.text}'\n"
         + "Now send me date and time of very important reminder in format: \n"
         + "YYYY-MM-DD hh:mm \n"
-        # + "and press 'Create reminder'",
-        # reply_markup=get_inline_kb("reminder_create"),
     )
     await BotStatesForUser.VI_reminder_date.set()
 
@@ -247,196 +275,6 @@ async def VI_reminder_date(message: types.Message, state: FSMContext):
     await BotStatesForUser.add_remove.set()
 
 
-@dp.message_handler(state=BotStatesForUser.remove_reminder_num)
-async def remove_reminder_num(message: types.Message, state: FSMContext):
-    print("Got number of reminder to be removed")
-    user_data = await state.get_data()
-    current_user = user_data["current_user"]
-    # last_message = user_data["last_message"].text.strip()
-    if message.text.strip().isdigit():
-        reminder_number = int(message.text.strip())
-        async with async_session() as session:
-            stmt = select(Reminders).where(Reminders.user_id == current_user.id)
-            result = await session.execute(stmt)
-            for i, rem in enumerate(result.scalars(), start=1):
-                if i == reminder_number:
-                    await session.delete(rem)
-                    await session.commit()
-    lr = await list_of_reminders(current_user.id)
-    if len(lr) == 0:
-        await message.answer(
-            text=f"<em><b>{current_user.full_name}!</b> \n"
-            + "You don't have any reminders now. But I'm here and ready to help! 😉</em>",
-            parse_mode="HTML",
-            reply_markup=get_inline_kb("add_remove"),
-        )
-    else:
-        str_lr = "\n".join(
-            [
-                str(s.reminder_time)
-                + ": "
-                + s.reminder
-                + " ("
-                + s.type_of_reminder
-                + ")"
-                for s in lr
-            ]
-        )
-        quantity = str(len(lr)) + " reminder" if len(lr) == 1 else " reminders"
-        await message.answer(
-            text=f"<em><b>{current_user.full_name}!</b></em> \n"
-            + f"You have {quantity}: \n{str_lr}\n"
-            + "<em>And now, I'm here and ready to help! 😉</em>",
-            parse_mode="HTML",
-            reply_markup=get_inline_kb("add_remove"),
-        )
-    await BotStatesForUser.add_remove.set()
-
-
-@dp.message_handler(state="*")
-async def echo(message: types.Message, state: FSMContext):
-    print("Got some text and saved to State")
-    await state.update_data(last_message=message)
-    await message.answer(
-        text=f"Got it! I saved: '{message.text}'"
-        # + "'\n (Remember to press the button above to continue ⬆️)"
-    )
-
-
-@dp.callback_query_handler(text="Add_reminder", state=BotStatesForUser.add_remove)
-# lambda callback_query: callback_query.data.startswith('Add')
-async def action_callback_add(callback: types.CallbackQuery):
-    print("Pressed Add reminder")
-    await callback.message.edit_text(
-        text="""Let's choose type of reminder:
-<b>Very important reminder</b> - bot will send a reminder message every minute until you confirm receipt
-<b>Simple reminder</b> - bot will send a reminder message once""",
-        parse_mode="HTML",
-        reply_markup=get_inline_kb("type_reminder"),
-    )
-    await BotStatesForUser.type_reminder.set()
-
-
-@dp.callback_query_handler(text="VI_reminder", state=BotStatesForUser.type_reminder)
-async def action_callback_add_VI_rem(callback: types.CallbackQuery):
-    print("Pressed add VI reminder")
-    await callback.message.edit_text(
-        text="Good! Now send me text of very important reminder",  # and then press "Lock text and set time"',
-        # parse_mode="HTML",
-        # reply_markup=get_inline_kb("set_time_reminder"),
-    )
-    await BotStatesForUser.VI_reminder.set()
-
-
-@dp.callback_query_handler(text="Simple_reminder", state=BotStatesForUser.type_reminder)
-async def action_callback_add_simple_rem(callback: types.CallbackQuery):
-    print("Pressed add simple reminder")
-    await callback.message.edit_text(
-        text="Good! Now send me text of simple reminder",  # and then press "Lock text an set time"',
-        # parse_mode="HTML",
-        # reply_markup=get_inline_kb("set_time_reminder"),
-    )
-    await BotStatesForUser.simple_reminder.set()
-
-
-@dp.callback_query_handler(text="set_time", state=BotStatesForUser.VI_reminder)
-async def action_callback_add_VI_rem_set_time(
-    callback: types.CallbackQuery, state: FSMContext
-):
-    print("Pressed set time in VI reminder")
-    user_data = await state.get_data()
-    await state.update_data(penultimate_message=user_data["last_message"])
-    await callback.message.answer(
-        text="""Good! Send me date and time of very important reminder in format:
-YYYY-MM-DD hh:mm
-and press "Create reminder" """,
-        parse_mode="HTML",
-        reply_markup=get_inline_kb("reminder_create"),
-    )
-    await BotStatesForUser.VI_reminder.set()
-
-
-@dp.callback_query_handler(text="set_time", state=BotStatesForUser.simple_reminder)
-async def action_callback_add_simple_rem_set_time(
-    callback: types.CallbackQuery, state: FSMContext
-):
-    print("Pressed set time in simple reminder")
-    user_data = await state.get_data()
-    await state.update_data(penultimate_message=user_data["last_message"])
-    await callback.message.answer(
-        text="""Good! Send me date and time of simple reminder in format:
-YYYY-MM-DD hh:mm
-and press "Create reminder" """,
-        parse_mode="HTML",
-        reply_markup=get_inline_kb("reminder_create"),
-    )
-    await BotStatesForUser.simple_reminder.set()
-
-
-# @dp.callback_query_handler(text="create_reminder", state=BotStatesForUser.VI_reminder)
-# async def action_callback_add_VI_rem_create(
-#     callback: types.CallbackQuery, state: FSMContext
-# ):
-#     print("Pressed create VI reminder")
-#     user_data = await state.get_data()
-#     current_user = user_data["current_user"]
-#     date = parse(user_data["last_message"].text)
-#     text = user_data["penultimate_message"].text
-
-#     async with async_session() as session:
-#         async with session.begin():
-#             session.add_all(
-#                 [
-#                     Reminders(
-#                         user_id=current_user.id,
-#                         type_of_reminder="VI",
-#                         reminder=text,
-#                         reminder_time=date,
-#                     )
-#                 ]
-#             )
-
-#     await callback.message.answer(
-#         text=f"Good! I saved very important reminder:\n{date}: {text}",
-#         parse_mode="HTML",
-#         reply_markup=get_inline_kb("add_remove"),
-#     )
-#     await BotStatesForUser.add_remove.set()
-
-
-# @dp.callback_query_handler(
-#     text="create_reminder", state=BotStatesForUser.simple_reminder
-# )
-# async def action_callback_add_simple_rem_create(
-#     callback: types.CallbackQuery, state: FSMContext
-# ):
-#     print("Pressed create simple reminder")
-#     user_data = await state.get_data()
-#     current_user = user_data["current_user"]
-#     date = parse(user_data["last_message"].text)
-#     text = user_data["penultimate_message"].text
-
-#     async with async_session() as session:
-#         async with session.begin():
-#             session.add_all(
-#                 [
-#                     Reminders(
-#                         user_id=current_user.id,
-#                         type_of_reminder="simple",
-#                         reminder=text,
-#                         reminder_time=date,
-#                     )
-#                 ]
-#             )
-
-#     await callback.message.answer(
-#         text=f"Good! I saved simple reminder:\n{date}: {text}",
-#         parse_mode="HTML",
-#         reply_markup=get_inline_kb("add_remove"),
-#     )
-#     await BotStatesForUser.add_remove.set()
-
-
 @dp.callback_query_handler(text="Remove_reminder", state=BotStatesForUser.add_remove)
 async def action_callback_remove(callback: types.CallbackQuery, state: FSMContext):
     print("Pressed Remove reminder")
@@ -477,55 +315,53 @@ async def action_callback_remove(callback: types.CallbackQuery, state: FSMContex
     await BotStatesForUser.remove_reminder_num.set()
 
 
-# @dp.callback_query_handler(
-#     text="Remove_reminder", state=BotStatesForUser.remove_reminder
-# )
-# async def action_callback_remove_one(callback: types.CallbackQuery, state: FSMContext):
-#     print("Pressed Remove one reminder")
-#     user_data = await state.get_data()
-#     current_user = user_data["current_user"]
-#     last_message = user_data["last_message"].text.strip()
-#     if last_message.isdigit():
-#         reminder_number = int(last_message)
-#         async with async_session() as session:
-#             stmt = select(Reminders).where(Reminders.user_id == current_user.id)
-#             result = await session.execute(stmt)
-#             for i, rem in enumerate(result.scalars(), start=1):
-#                 if i == reminder_number:
-#                     await session.delete(rem)
-#                     await session.commit()
-
-#     lr = await list_of_reminders(current_user.id)
-#     if len(lr) == 0:
-#         await callback.message.answer(
-#             text=f"""<em><b>{current_user.full_name}!</b>
-# You don't have any reminders now. But I'm here and ready to help! 😉</em>""",
-#             parse_mode="HTML",
-#             reply_markup=get_inline_kb("add_remove"),
-#         )
-#     else:
-#         str_lr = "\n".join(
-#             [
-#                 str(s.reminder_time)
-#                 + ": "
-#                 + s.reminder
-#                 + " ("
-#                 + s.type_of_reminder
-#                 + ")"
-#                 for s in lr
-#             ]
-#         )
-#         quantity = str(len(lr)) + " reminder" if len(lr) == 1 else " reminders"
-#         await callback.message.answer(
-#             text=f"""<em><b>{current_user.full_name}!</b></em>
-# You have {quantity}:
-# {str_lr}
-# <em>And now, I'm here and ready to help! 😉</em>""",
-#             parse_mode="HTML",
-#             reply_markup=get_inline_kb("add_remove"),
-#         )
-
-#     await BotStatesForUser.add_remove.set()
+@dp.message_handler(state=BotStatesForUser.remove_reminder_num)
+async def remove_reminder_num(message: types.Message, state: FSMContext):
+    print("Got number of reminder to be removed")
+    user_data = await state.get_data()
+    current_user = user_data["current_user"]
+    if message.text.strip().isdigit():
+        reminder_number = int(message.text.strip())
+        async with async_session() as session:
+            stmt = (
+                select(Reminders)
+                .where(Reminders.user_id == current_user.id)
+                .order_by(Reminders.reminder_time)
+            )
+            result = await session.execute(stmt)
+            for i, rem in enumerate(result.scalars(), start=1):
+                if i == reminder_number:
+                    await session.delete(rem)
+                    await session.commit()
+    lr = await list_of_reminders(current_user.id)
+    if len(lr) == 0:
+        await message.answer(
+            text=f"<em><b>{current_user.full_name}!</b> \n"
+            + "You don't have any reminders now. But I'm here and ready to help! 😉</em>",
+            parse_mode="HTML",
+            reply_markup=get_inline_kb("add_remove"),
+        )
+    else:
+        str_lr = "\n".join(
+            [
+                str(s.reminder_time)
+                + ": "
+                + s.reminder
+                + " ("
+                + s.type_of_reminder
+                + ")"
+                for s in lr
+            ]
+        )
+        quantity = str(len(lr)) + " reminder" if len(lr) == 1 else " reminders"
+        await message.answer(
+            text=f"<em><b>{current_user.full_name}!</b></em> \n"
+            + f"You have {quantity}: \n{str_lr}\n"
+            + "<em>And now, I'm here and ready to help! 😉</em>",
+            parse_mode="HTML",
+            reply_markup=get_inline_kb("add_remove"),
+        )
+    await BotStatesForUser.add_remove.set()
 
 
 @dp.callback_query_handler(text="Change_TZ", state=BotStatesForUser.add_remove)
@@ -543,74 +379,6 @@ async def action_callback_change_TZ(callback: types.CallbackQuery, state: FSMCon
     )
     await state.update_data(current_TZ=res.user_tz)
     await BotStatesForUser.unknown_TZ.set()
-
-
-@dp.callback_query_handler(text="Back", state="*")
-async def action_callback_back(callback: types.CallbackQuery):
-    print("Pressed Back")
-    await callback.answer()  # show_alert=True,
-    await callback.message.answer(
-        text="<em><b>Ok!</b> I'm here and ready to help! 😉</em>",
-        parse_mode="HTML",
-        reply_markup=get_inline_kb("add_remove"),
-    )
-    await BotStatesForUser.add_remove.set()
-
-
-@dp.callback_query_handler(text="TZ_set", state=BotStatesForUser.unknown_TZ)
-async def action_callback_set_TZ(callback: types.CallbackQuery, state: FSMContext):
-    print("Set TZ")
-    user_data = await state.get_data()
-    current_user = user_data["current_user"]
-    async with async_session() as session:
-        stmt = select(Users).where(Users.user_id == current_user.id)
-        result = await session.execute(stmt)
-        res = result.scalars().first()
-        res.user_tz = user_data["current_TZ"]
-        await session.commit()
-
-    lr = await list_of_reminders(current_user.id)
-    if len(lr) == 0:
-        await callback.message.answer(
-            text=f"""<em><b>Very good, {current_user.full_name}!</b> 
-You don't have any reminders now. But I'm here and ready to help! 😉</em>""",
-            parse_mode="HTML",
-            reply_markup=get_inline_kb("add_remove"),
-        )
-    else:
-        str_lr = "\n".join(
-            [
-                str(s.reminder_time)
-                + ": "
-                + s.reminder
-                + " ("
-                + s.type_of_reminder
-                + ")"
-                for s in lr
-            ]
-        )
-        quantity = str(len(lr)) + " reminder" if len(lr) == 1 else " reminders"
-        await callback.message.answer(
-            text=f"""<em><b>Very good, {current_user.full_name}!</b></em>
-You have {quantity}:
-{str_lr}
-<em>And now, I'm here and ready to help! 😉</em>""",
-            parse_mode="HTML",
-            reply_markup=get_inline_kb("add_remove"),
-        )
-
-    await BotStatesForUser.add_remove.set()
-    await callback.message.delete()
-    copy_of_set = tasks_of_scheduler.copy()
-    scheduler_not_started_for_current_user = True
-    for task in copy_of_set:
-        if task.get_name() == str(current_user.id):
-            scheduler_not_started_for_current_user = False
-    if scheduler_not_started_for_current_user:
-        task_of_scheduler = asyncio.create_task(
-            scheduler(callback.message.chat, state), name=str(current_user.id)
-        )  # start of scheduler
-        tasks_of_scheduler.add(task_of_scheduler)
 
 
 @dp.callback_query_handler(state=BotStatesForUser.unknown_TZ)
@@ -631,9 +399,77 @@ async def action_callback_ch_TZ(callback: types.CallbackQuery, state: FSMContext
     await BotStatesForUser.unknown_TZ.set()
 
 
+@dp.callback_query_handler(text="TZ_set", state=BotStatesForUser.unknown_TZ)
+async def action_callback_set_TZ(callback: types.CallbackQuery, state: FSMContext):
+    print("Set TZ")
+    user_data = await state.get_data()
+    current_user = user_data["current_user"]
+    async with async_session() as session:
+        stmt = select(Users).where(Users.user_id == current_user.id)
+        result = await session.execute(stmt)
+        res = result.scalars().first()
+        res.user_tz = user_data["current_TZ"]
+        await session.commit()
+
+    lr = await list_of_reminders(current_user.id)
+    if len(lr) == 0:
+        await callback.message.answer(
+            text=f"<em><b>Very good, {current_user.full_name}!</b>\n"
+            + "You don't have any reminders now. But I'm here and ready to help! 😉</em>",
+            parse_mode="HTML",
+            reply_markup=get_inline_kb("add_remove"),
+        )
+    else:
+        str_lr = "\n".join(
+            [
+                str(s.reminder_time)
+                + ": "
+                + s.reminder
+                + " ("
+                + s.type_of_reminder
+                + ")"
+                for s in lr
+            ]
+        )
+        quantity = str(len(lr)) + " reminder" if len(lr) == 1 else " reminders"
+        await callback.message.answer(
+            text=f"<em><b>Very good, {current_user.full_name}!</b></em>\n"
+            + f"You have {quantity}:\n{str_lr}\n"
+            + "<em>And now, I'm here and ready to help! 😉</em>",
+            parse_mode="HTML",
+            reply_markup=get_inline_kb("add_remove"),
+        )
+
+    await BotStatesForUser.add_remove.set()
+    await callback.message.delete()
+    copy_of_set = tasks_of_scheduler.copy()
+    scheduler_not_started_for_current_user = True
+    for task in copy_of_set:
+        if task.get_name() == str(current_user.id):
+            scheduler_not_started_for_current_user = False
+    if scheduler_not_started_for_current_user:
+        task_of_scheduler = asyncio.create_task(
+            scheduler(callback.message.chat, state), name=str(current_user.id)
+        )  # start of scheduler
+        tasks_of_scheduler.add(task_of_scheduler)
+
+
+@dp.callback_query_handler(text="Back", state="*")
+async def action_callback_back(callback: types.CallbackQuery):
+    print("Pressed Back")
+    await callback.answer()  # show_alert=True,
+    await callback.message.answer(
+        text="<em><b>Ok!</b> I'm here and ready to help! 😉</em>",
+        parse_mode="HTML",
+        reply_markup=get_inline_kb("add_remove"),
+    )
+    await BotStatesForUser.add_remove.set()
+
+
 @dp.callback_query_handler(text="got_it", state="*")
 async def action_callback_got_it(callback: types.CallbackQuery, state: FSMContext):
     print("Got it!")
+    await callback.answer()
     user_data = await state.get_data()
     async with async_session() as session:
         stmt = select(Reminders).where(Reminders.id == user_data["last_VI_rem"])
@@ -641,7 +477,14 @@ async def action_callback_got_it(callback: types.CallbackQuery, state: FSMContex
         rem = result.scalars().first()
         rem.type_of_reminder = "done"
         await session.commit()
-    await callback.answer(text="Ok, I got it too!")
+    await callback.message.answer(text="Ok, I got it too!")
+
+
+@dp.message_handler(state="*")
+async def echo(message: types.Message, state: FSMContext):
+    print("Got some text and saved to State")
+    await state.update_data(last_message=message)
+    await message.answer(text=f"Got it! I saved: '{message.text}'")
 
 
 async def scheduler(chat, state):
